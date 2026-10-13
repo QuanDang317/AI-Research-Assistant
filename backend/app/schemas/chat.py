@@ -31,3 +31,28 @@ class ChatResponse(BaseModel):
     answer: str
     citations: List[Citation] = []
     metadata: Dict[str, Any] = {}
+
+
+class SearchRequest(BaseModel):
+    query: str
+    filters: Optional[ChatFilters] = None
+    paper_ids: Optional[List[str]] = None
+    limit: int = Field(default=5, ge=1, le=20)
+    use_multi_query: bool = False
+
+
+class SearchResultChunk(BaseModel):
+    id: str
+    paper_id: str
+    paper_title: str
+    section: Optional[str] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    text: str
+    score: Optional[float] = None
+
+
+class SearchResponse(BaseModel):
+    query: str
+    total_results: int
+    results: List[SearchResultChunk]

@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     DENSE_EMBEDDING_DIM: int = 384
     SPARSE_EMBEDDING_MODEL: str = "Qdrant/bm25"
 
+    # Reranker Model
+    RERANKER_MODEL_NAME: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
     UPLOAD_DIR: str = "./data/papers"
 
 settings = Settings()
