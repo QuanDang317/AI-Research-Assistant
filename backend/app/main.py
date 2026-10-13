@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db.session import init_db
-from app.api import papers, search
+from app.api import papers, search, chat, compare
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,8 +26,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register API Routers
 app.include_router(papers.router)
 app.include_router(search.router)
+app.include_router(chat.router)
+app.include_router(compare.router)
 
 @app.get("/")
 def root():

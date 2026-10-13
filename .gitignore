@@ -31,3 +31,5 @@ qdrant_data/
 
 data/qdrant_test/
 data/qdrant_local/
+
+backend/data/
