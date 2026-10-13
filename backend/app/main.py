@@ -1,6 +1,9 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.db.session import init_db
 from app.api import papers, search, chat, compare
@@ -32,12 +35,14 @@ app.include_router(search.router)
 app.include_router(chat.router)
 app.include_router(compare.router)
 
+# Mount Frontend Web Interface
+frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+if os.path.exists(frontend_dir):
+    app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend_app")
+
 @app.get("/")
 def root():
-    return {
-        "message": f"Welcome to {settings.APP_NAME} API",
-        "docs_url": "/docs"
-    }
+    return RedirectResponse(url="/app")
 
 @app.get("/health")
 def health_check():
