@@ -28,3 +28,6 @@ qdrant_data/
 # IDE
 .vscode/
 .idea/
+
+data/qdrant_test/
+data/qdrant_local/
