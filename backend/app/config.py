@@ -9,11 +9,19 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
 
+    # Database
     DATABASE_URL: str = "postgresql://user:password123@localhost:5432/research_db"
 
+    # Qdrant Vector Database
     QDRANT_HOST: str = "localhost"
     QDRANT_PORT: int = 6333
     QDRANT_COLLECTION_NAME: str = "papers"
+
+    # Embedding Models
+    # Default to bge-small (384 dim) for fast CPU inference, configurable to bge-large (1024 dim)
+    DENSE_EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+    DENSE_EMBEDDING_DIM: int = 384
+    SPARSE_EMBEDDING_MODEL: str = "Qdrant/bm25"
 
     UPLOAD_DIR: str = "./data/papers"
 

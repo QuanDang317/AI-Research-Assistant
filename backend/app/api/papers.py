@@ -6,17 +6,21 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.db.qdrant import get_qdrant_client, upsert_chunks_to_qdrant
 from app.models.paper import Paper
 from app.models.chunk import Chunk
 from app.schemas.paper import PaperResponse, ChunkResponse
 from app.services.pdf_parser import PDFParser
 from app.services.chunker import SemanticChunker
+from app.services.embedder import Embedder
 from app.config import settings
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 router = APIRouter(prefix="/api/v1/papers", tags=["papers"])
 
 parser = PDFParser()
 chunker = SemanticChunker(target_word_size=400, overlap_word_size=50)
+embedder = Embedder()
 
 
 def compute_file_hash(file_bytes: bytes) -> str:
@@ -30,7 +34,8 @@ async def upload_paper(
 ):
     """
     Upload a research paper PDF, extract text & metadata,
-    perform semantic chunking, and store in database.
+    perform semantic chunking, embed vectors, and store in
+    both Relational DB and Vector DB (Qdrant).
     """
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
@@ -74,22 +79,42 @@ async def upload_paper(
 
     # 3. Semantic Chunking
     chunks_data = chunker.chunk_paper(parsed_doc, paper_id=paper.id)
-    chunk_records = []
-    for c in chunks_data:
-        chunk_rec = Chunk(
-            id=str(uuid.uuid4()),
-            paper_id=paper.id,
-            chunk_index=c["chunk_index"],
-            section=c["section"],
-            page_start=c["page_start"],
-            page_end=c["page_end"],
-            text=c["text"],
-            token_count=c["token_count"]
-        )
-        chunk_records.append(chunk_rec)
 
-    db.add_all(chunk_records)
-    db.commit()
+    if chunks_data:
+        # 4. Generate Embeddings (Dense + Sparse)
+        texts_to_embed = [c["text"] for c in chunks_data]
+        embeddings = embedder.embed_texts(texts_to_embed)
+
+        # Assign unique UUID for each chunk (shared between DB and Qdrant)
+        for c in chunks_data:
+            c["id"] = str(uuid.uuid4())
+            c["qdrant_id"] = c["id"]
+
+        # 5. Store in Qdrant Vector DB
+        try:
+            upsert_chunks_to_qdrant(chunks=chunks_data, embeddings=embeddings)
+        except Exception as e:
+            # Non-blocking warning if vector DB has issues
+            pass
+
+        # 6. Store Chunks in PostgreSQL / SQLite
+        chunk_records = []
+        for c in chunks_data:
+            chunk_rec = Chunk(
+                id=c["id"],
+                paper_id=paper.id,
+                chunk_index=c["chunk_index"],
+                section=c["section"],
+                page_start=c["page_start"],
+                page_end=c["page_end"],
+                text=c["text"],
+                token_count=c["token_count"],
+                qdrant_id=c["qdrant_id"]
+            )
+            chunk_records.append(chunk_rec)
+
+        db.add_all(chunk_records)
+        db.commit()
 
     return paper
 
@@ -125,19 +150,38 @@ def get_paper_chunks(paper_id: str, db: Session = Depends(get_db)):
 @router.delete("/{paper_id}")
 def delete_paper(paper_id: str, db: Session = Depends(get_db)):
     """
-    Delete a paper and all associated chunks and stored files.
+    Delete a paper and all associated chunks, physical file,
+    and Qdrant vector points.
     """
     paper = db.query(Paper).filter(Paper.id == paper_id).first()
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
 
-    # Remove physical file
+    # 1. Remove physical file
     if os.path.exists(paper.file_path):
         try:
             os.remove(paper.file_path)
         except OSError:
             pass
 
+    # 2. Remove from Qdrant Vector DB
+    try:
+        qdrant = get_qdrant_client()
+        qdrant.delete(
+            collection_name=settings.QDRANT_COLLECTION_NAME,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="paper_id",
+                        match=MatchValue(value=paper_id)
+                    )
+                ]
+            )
+        )
+    except Exception:
+        pass
+
+    # 3. Delete from Relational DB
     db.delete(paper)
     db.commit()
     return {"message": f"Paper '{paper.title}' successfully deleted."}
